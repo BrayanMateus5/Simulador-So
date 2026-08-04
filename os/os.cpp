@@ -53,6 +53,7 @@ namespace OS
 			terminal_println(cpu, Terminal::App, "clear - limpa a tela");
 			terminal_println(cpu, Terminal::App, "run - carrega o programa simple-1.bin");
 			terminal_println(cpu, Terminal::App, "exit - Fecha tudo");
+			terminal_println(cpu, Terminal::App, "kill - mata o progresso");
 		}
 		else if (cmd == "ola")
 		{
@@ -72,6 +73,11 @@ namespace OS
 		else if (cmd == "exit")
 		{
 			cpu->turn_off();
+		}
+		else if (cmd == "kill")
+		{
+			terminal_println(cpu, Terminal::Kernel, "Programa finalizado");
+			carrega_programa("idle.bin");
 		}
 		else
 		{
