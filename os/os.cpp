@@ -124,8 +124,14 @@ namespace OS
 				addr++;
 				ch = cpu->pmem_read(addr);
 			}
+			break;
 		}
-		break;
+		case 2: // nova linha
+			terminal_print(cpu, Terminal::App, '\n');
+			break;
+
+		case 3: // imprime um número inteiro
+			terminal_print(cpu, Terminal::App, cpu->get_gpr(1));
 		}
 	}
 
