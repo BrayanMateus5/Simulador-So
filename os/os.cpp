@@ -17,15 +17,6 @@ namespace OS
 	static Arch::Cpu *cpu = nullptr;
 	static std::string line_buffer;
 
-	//----------------------------parte onde inicia a "máquina"
-	void boot(Arch::Cpu *cpu_ptr)
-	{
-		cpu = cpu_ptr; // guarda o ponteiro para utilizar depois
-
-		terminal_println(cpu, Terminal::Command, "Type commands here"); // mensagem
-		terminal_println(cpu, Terminal::App, "Apps output here");		// de cada
-		terminal_println(cpu, Terminal::Kernel, "Kernel output here");	// terminal
-	}
 	//------lê e carrega o comando do usuário para a memória física
 	static void carrega_programa(const std::string &nome)
 	{
@@ -40,6 +31,17 @@ namespace OS
 		// aponta pro endereço 1
 		cpu->set_pc(1);
 	}
+	//----------------------------parte onde inicia a "máquina"
+	void boot(Arch::Cpu *cpu_ptr)
+	{
+		cpu = cpu_ptr; // guarda o ponteiro para utilizar depois
+
+		terminal_println(cpu, Terminal::Command, "Type commands here"); // mensagem
+		terminal_println(cpu, Terminal::App, "Apps output here");		// de cada
+		terminal_println(cpu, Terminal::Kernel, "Kernel output here");	// terminal
+		carrega_programa("idle.bin");
+	}
+
 	// ----leitura do comando do usuário e interpretação
 	static void interpretar_comando(const std::string &cmd)
 	{
@@ -112,6 +114,7 @@ namespace OS
 		{
 		case 0: // pra fechar o processo
 			terminal_println(cpu, Terminal::Kernel, "Processo encerrado");
+			carrega_programa("idle.bin");
 			break;
 
 		case 1: // Esse imprime uma String
