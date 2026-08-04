@@ -52,6 +52,7 @@ namespace OS
 			terminal_println(cpu, Terminal::App, "ola - mostra uma mensagem");
 			terminal_println(cpu, Terminal::App, "clear - limpa a tela");
 			terminal_println(cpu, Terminal::App, "run - carrega o programa simple-1.bin");
+			terminal_println(cpu, Terminal::App, "exit - Fecha tudo");
 		}
 		else if (cmd == "ola")
 		{
@@ -68,7 +69,10 @@ namespace OS
 		{
 			carrega_programa("simple-1.bin");
 		}
-
+		else if (cmd == "exit")
+		{
+			cpu->turn_off();
+		}
 		else
 		{
 			terminal_println(cpu, Terminal::App, "Unknown command: ", cmd);
