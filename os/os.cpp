@@ -17,6 +17,18 @@ namespace OS
 	static Arch::Cpu *cpu = nullptr;
 	static std::string line_buffer;
 
+	struct Process
+	{
+		// verifica qual programa que vai estar rodando
+		std::string nome;
+		bool ativo = false;
+		// verifica também se há algo rodando
+
+		// ainda vai ser feita a páginação
+		PageTable page_table;
+	};
+	static Process processo;
+
 	//------lê e carrega o comando do usuário para a memória física
 	static void carrega_programa(const std::string &nome)
 	{
@@ -68,7 +80,9 @@ namespace OS
 
 		else if (cmd == "run")
 		{
-			carrega_programa("simple-1.bin");
+			carrega_programa("print.bin");
+			processo.nome = "print.bin";
+			processo.ativo = true;
 		}
 		else if (cmd == "exit")
 		{
@@ -76,8 +90,16 @@ namespace OS
 		}
 		else if (cmd == "kill")
 		{
-			terminal_println(cpu, Terminal::Kernel, "Programa finalizado");
-			carrega_programa("idle.bin");
+			if (processo.ativo)
+			{
+				terminal_println(cpu, Terminal::Kernel, "Programa finalizado");
+				processo.ativo = false;
+				carrega_programa("idle.bin");
+			}
+			else
+			{
+				terminal_println(cpu, Terminal::Kernel, "Nenhum processo em execucao ");
+			}
 		}
 		else
 		{
@@ -124,6 +146,7 @@ namespace OS
 		{
 		case 0: // pra fechar o processo
 			terminal_println(cpu, Terminal::Kernel, "Processo encerrado");
+			processo.ativo = false;
 			carrega_programa("idle.bin");
 			break;
 
