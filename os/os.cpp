@@ -12,11 +12,13 @@
 #include "os-lib.h"
 #include <vector>
 #include <array>
+#include "memoria.h"
 
 namespace OS
 {
 	static Arch::Cpu *cpu = nullptr;
 	static std::string line_buffer;
+	using PteField = Arch::Cpu::PteField;
 
 	//----------------Estrutura de processos
 	enum class Estado
@@ -38,6 +40,7 @@ namespace OS
 		PageTable page_table;
 	};
 	static Process processo;
+	static Memoria memoria;
 
 	// faz a leitura do estado e guarda
 	void salvar_contexto()
@@ -59,14 +62,52 @@ namespace OS
 		// Aqui faz a leitura do arquivo do disco para um vetor
 		std::vector<uint16_t> programa = Lib::load_from_disk_to_16bit_buffer(nome);
 
-		// Aqui faz a cópia do vetor para a memória física
-		for (uint16_t i = 0; i < programa.size(); i++)
-			cpu->pmem_write(i, programa[i]);
+		memoria.liberar_todos();  // libera os frames do programa anterior
+		processo.page_table = {}; // Limpa a tabela de páginas antes de remontar
+
+		// informa quantas páginas o programa ocupa, aqui no caso tamanho + 15
+		const uint16_t num_paginas = (programa.size() + Config::page_size - 1) / Config::page_size;
+
+		// nas páginas ele pega o frame, faz o mapeamento e copia
+		for (uint16_t pagina = 0; pagina < num_paginas; pagina++)
+		{
+			const int frame = memoria.alocar_frame(); // pega o frame
+
+			// Montagem de entrada da tabela de frames
+			PageTableEntry &pte = processo.page_table[pagina];
+			pte.set(PteField::PhyFrameID, frame);
+			pte.set(PteField::Present, 1);
+			pte.set(PteField::Readable, 1);
+			pte.set(PteField::Writable, 1);
+			pte.set(PteField::Executable, 1);
+
+			// faz a copia das words da página pro frame físico
+			for (uint16_t offset = 0; offset < Config::page_size; offset++)
+			{
+				const uint32_t indice = pagina * Config::page_size + offset;		 // posição no programa
+				const uint16_t endereco_fisico = frame * Config::page_size + offset; // posição na memória
+				const uint16_t valor = (indice < programa.size()) ? programa[indice] : 0;
+				cpu->pmem_write(endereco_fisico, valor); // copia a página pro frame
+			}
+		}
+		// liga a memória virtual em paginação e aponta pra tabela de processos
+		cpu->set_vmem_mode(VmemMode::Paging);	   // inicia a tradução por páginação
+		cpu->set_page_table(&processo.page_table); // mostra a CPU qual a tabela que vai usar
 
 		// aponta pro endereço 1
 		cpu->set_pc(1);
 		processo.pc = 1;
 		processo.registradores = {};
+	}
+
+	// traduz o endereço virtual para o físico, usando a paginação
+	static uint16_t traduzir(uint16_t vaddr)
+	{
+		const uint16_t pagina = vaddr >> Config::page_size_bits;				  // número das páginas
+		const uint16_t offset = vaddr & (Config::page_size - 1);				  // posição dentro da página
+		const uint16_t frame = processo.page_table[pagina][PteField::PhyFrameID]; // leitura do frame da tabela
+
+		return frame * Config::page_size + offset; // cria o endereço físico
 	}
 	//----------------------------parte onde inicia a "máquina"
 	void boot(Arch::Cpu *cpu_ptr)
@@ -180,13 +221,13 @@ namespace OS
 
 		case 1: // Esse imprime uma String
 		{
-			uint16_t addr = cpu->get_gpr(1);
-			uint16_t ch = cpu->pmem_read(addr);
+			uint16_t vaddr = cpu->get_gpr(1);			   // endereço virtual
+			uint16_t ch = cpu->pmem_read(traduzir(vaddr)); // traduz e lê
 			while (ch != 0)
 			{
 				terminal_print(cpu, Terminal::App, static_cast<char>(ch));
-				addr++;
-				ch = cpu->pmem_read(addr);
+				vaddr++;
+				ch = cpu->pmem_read(traduzir(vaddr));
 			}
 			break;
 		}
