@@ -11,28 +11,51 @@
 #include "os.h"
 #include "os-lib.h"
 #include <vector>
+#include <array>
 
 namespace OS
 {
 	static Arch::Cpu *cpu = nullptr;
 	static std::string line_buffer;
 
+	//----------------Estrutura de processos
+	enum class Estado
+	{
+		Executando,
+		Pronto,
+		Bloqueado,
+		Morto
+	};
 	struct Process
 	{
 		// verifica qual programa que vai estar rodando
 		std::string nome;
-		bool ativo = false;
-		// verifica também se há algo rodando
+		Estado estado = Estado::Pronto;
+		uint16_t pc = 1;
+		std::array<uint16_t, 8> registradores = {};
 
 		// ainda vai ser feita a páginação
 		PageTable page_table;
 	};
 	static Process processo;
 
+	// faz a leitura do estado e guarda
+	void salvar_contexto()
+	{
+		processo.pc = cpu->get_pc();
+		for (int i = 0; i < 8; i++)
+			processo.registradores[i] = cpu->get_gpr(i);
+	}
+	void restaurar_contexto()
+	{
+		cpu->set_pc(processo.pc);
+		for (int i = 0; i < 8; i++)
+			cpu->set_gpr(i, processo.registradores[i]);
+	}
+
 	//------lê e carrega o comando do usuário para a memória física
 	static void carrega_programa(const std::string &nome)
 	{
-
 		// Aqui faz a leitura do arquivo do disco para um vetor
 		std::vector<uint16_t> programa = Lib::load_from_disk_to_16bit_buffer(nome);
 
@@ -42,6 +65,8 @@ namespace OS
 
 		// aponta pro endereço 1
 		cpu->set_pc(1);
+		processo.pc = 1;
+		processo.registradores = {};
 	}
 	//----------------------------parte onde inicia a "máquina"
 	void boot(Arch::Cpu *cpu_ptr)
@@ -82,7 +107,7 @@ namespace OS
 		{
 			carrega_programa("print.bin");
 			processo.nome = "print.bin";
-			processo.ativo = true;
+			processo.estado = Estado::Executando;
 		}
 		else if (cmd == "exit")
 		{
@@ -90,10 +115,10 @@ namespace OS
 		}
 		else if (cmd == "kill")
 		{
-			if (processo.ativo)
+			if (processo.estado == Estado::Executando)
 			{
 				terminal_println(cpu, Terminal::Kernel, "Programa finalizado");
-				processo.ativo = false;
+				processo.estado = Estado::Morto;
 				carrega_programa("idle.bin");
 			}
 			else
@@ -108,9 +133,11 @@ namespace OS
 	}
 
 	//----------------------------------------------Interrupção de código de teclado
-	void interrupt(const InterruptCode interrupt)
+	void interrupt(InterruptCode code)
 	{
-		switch (interrupt)
+		salvar_contexto(); // salva o processo atual
+
+		switch (code)
 		{
 		case InterruptCode::Keyboard:
 		{
@@ -136,6 +163,7 @@ namespace OS
 			break;
 		}
 		}
+		restaurar_contexto();
 	}
 
 	void syscall()
@@ -146,7 +174,7 @@ namespace OS
 		{
 		case 0: // pra fechar o processo
 			terminal_println(cpu, Terminal::Kernel, "Processo encerrado");
-			processo.ativo = false;
+			processo.estado = Estado::Morto;
 			carrega_programa("idle.bin");
 			break;
 
