@@ -123,7 +123,17 @@ namespace OS
 	// ----leitura do comando do usuário e interpretação
 	static void interpretar_comando(const std::string &cmd)
 	{
-		if (cmd == "help") // a lista de comandos
+		// faz a separação do comando e argumento
+		std::string comando = cmd;
+		std::string argumento = "";
+
+		size_t espaco = cmd.find(' ');
+		if (espaco != std::string::npos) // verificou se há espaço
+		{
+			comando = cmd.substr(0, espaco);
+			argumento = cmd.substr(espaco + 1);
+		}
+		if (comando == "help") // a lista de comandos
 		{
 			terminal_println(cpu, Terminal::App, "Comandos que podem te ajudar: ");
 			terminal_println(cpu, Terminal::App, "help - mostra os comandos");
@@ -133,28 +143,33 @@ namespace OS
 			terminal_println(cpu, Terminal::App, "exit - Fecha tudo");
 			terminal_println(cpu, Terminal::App, "kill - mata o progresso");
 		}
-		else if (cmd == "ola")
+		else if (comando == "ola")
 		{
 			terminal_println(cpu, Terminal::App, "Ola");
 		}
-		else if (cmd == "clear")
+		else if (comando == "clear")
 		{
 			for (int i = 0; i < 50; i++)
 
 				terminal_print(cpu, Terminal::App, '\n');
 		}
 
-		else if (cmd == "run")
+		else if (comando == "run")
 		{
-			carrega_programa("test-gpf.bin");
-			processo.nome = "test-gpf.bin";
-			processo.estado = Estado::Executando;
+			if (argumento == "") // acabou digitando run sem argumento
+				terminal_println(cpu, Terminal::App, "Uso: run <nome_do_programa>");
+			else
+			{
+				carrega_programa(argumento + ".bin");
+				processo.nome = argumento + ".bin";
+				processo.estado = Estado::Executando;
+			}
 		}
-		else if (cmd == "exit")
+		else if (comando == "exit")
 		{
 			cpu->turn_off();
 		}
-		else if (cmd == "kill")
+		else if (comando == "kill")
 		{
 			if (processo.estado == Estado::Executando)
 			{
