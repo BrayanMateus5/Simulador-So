@@ -146,8 +146,8 @@ namespace OS
 
 		else if (cmd == "run")
 		{
-			carrega_programa("print.bin");
-			processo.nome = "print.bin";
+			carrega_programa("test-gpf.bin");
+			processo.nome = "test-gpf.bin";
 			processo.estado = Estado::Executando;
 		}
 		else if (cmd == "exit")
@@ -181,6 +181,7 @@ namespace OS
 		switch (code)
 		{
 		case InterruptCode::Keyboard:
+
 		{
 			const uint16_t typed = cpu->read_io(IO_Port::TerminalReadTypedChar);
 			// aqui ele vai ler a tecla digitada e desarmar
@@ -201,6 +202,14 @@ namespace OS
 			}
 
 			terminal_print(cpu, Terminal::Command, c); // printa na tela
+			break;
+		}
+		case InterruptCode::CpuException:
+		{
+			const auto excecao = cpu->get_ref_cpu_exception();																 // pega os detalhes da exceção
+			terminal_println(cpu, Terminal::Kernel, "Excecao da CPU no endereco ", excecao.vaddr, " - processo finalizado"); // o endereço que gerou o problema
+			processo.estado = Estado::Morto;																				 // marca o processo como morto
+			carrega_programa("idle.bin");																					 // mata o processo e volta pro idle-bin
 			break;
 		}
 		}
