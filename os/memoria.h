@@ -5,24 +5,29 @@
 #include <cstdint>
 
 #include "../config.h"
+#include "../arch/arch.h"
 
 namespace OS
 {
-    class Memoria
-    {
-    private:
-        // memória física(32768)/tamanho da página(16) = total de frames(2048)
-        static constexpr uint16_t total_frames = Config::phys_mem_size_words / Config::page_size;
+    using PageTable = Arch::Cpu::PageTable; // definindo padrão do nome para somente PageTable
+    using PteField = Arch::Cpu::PteField;   // definindo o padrão para PteField
 
-        // se der false tá livre, se der true tá ocupado o frame
-        std::array<bool, total_frames> frame_ocupado = {};
+    // 32768 word de memória física e 16 por página com 2048 frames..
+    inline constexpr uint16_t total_frames = Config::phys_mem_size_words / Config::page_size;
+    // o inline faz com que todos compartilhe da mesma constante
 
-    public:
-        int alocar_frame(); // volta o id um frame livre ou -1 se tiver ocupado
+    // separando o virtual em páginas e offset
+    uint16_t pagina_de(uint16_t vaddr);
+    uint16_t offset_de(uint16_t vaddr);
 
-        void liberar_frame(uint16_t id); // marca como frame livre
-        void liberar_todos();            // libera os frames
-    };
+    // os frames da memória física
+    int alocar_frame(); // busca tentar alocar o frame ou devolve -1 se não tiver livre
+    void liberar_frame(uint16_t frame);
+    uint16_t frames_livres();
+
+    // Parte da tabela de páginas
+    void mapear_pagina(PageTable &tabela, uint16_t pagina, uint16_t frame);
+    void liberar_tabela(PageTable &tabela);
+    int traduzir(const PageTable &tabela, uint16_t vaddr); // o endereço físico ou o -1
 }
-
 #endif

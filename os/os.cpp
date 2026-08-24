@@ -7,7 +7,6 @@
 
 #include "../config.h"
 #include "../lib.h"
-#include "../arch/arch.h"
 #include "os.h"
 #include "os-lib.h"
 #include <vector>
@@ -18,7 +17,6 @@ namespace OS
 {
 	static Arch::Cpu *cpu = nullptr;
 	static std::string line_buffer;
-	using PteField = Arch::Cpu::PteField;
 
 	//----------------Estrutura de processos
 	enum class Estado
@@ -40,7 +38,6 @@ namespace OS
 		PageTable page_table;
 	};
 	static Process processo;
-	static Memoria memoria;
 
 	// faz a leitura do estado e guarda
 	void salvar_contexto()
@@ -56,59 +53,43 @@ namespace OS
 			cpu->set_gpr(i, processo.registradores[i]);
 	}
 
-	//------lê e carrega o comando do usuário para a memória física
+	//------Carregamento do comando do usuário
 	static void carrega_programa(const std::string &nome)
 	{
-		// Aqui faz a leitura do arquivo do disco para um vetor
+		// faz a leitura do bin para um vetor de palavras
 		std::vector<uint16_t> programa = Lib::load_from_disk_to_16bit_buffer(nome);
 
-		memoria.liberar_todos();  // libera os frames do programa anterior
-		processo.page_table = {}; // Limpa a tabela de páginas antes de remontar
+		liberar_tabela(processo.page_table); // liberação de frames ocupados do processo anterior
 
-		// informa quantas páginas o programa ocupa, aqui no caso tamanho + 15
-		const uint16_t num_paginas = (programa.size() + Config::page_size - 1) / Config::page_size;
+		const uint16_t num_paginas = (programa.size() + Config::page_size - 1) / Config::page_size; // declaração de num_paginas
 
-		// nas páginas ele pega o frame, faz o mapeamento e copia
 		for (uint16_t pagina = 0; pagina < num_paginas; pagina++)
 		{
-			const int frame = memoria.alocar_frame(); // pega o frame
-
-			// Montagem de entrada da tabela de frames
-			PageTableEntry &pte = processo.page_table[pagina];
-			pte.set(PteField::PhyFrameID, frame);
-			pte.set(PteField::Present, 1);
-			pte.set(PteField::Readable, 1);
-			pte.set(PteField::Writable, 1);
-			pte.set(PteField::Executable, 1);
-
-			// faz a copia das words da página pro frame físico
-			for (uint16_t offset = 0; offset < Config::page_size; offset++)
+			const int frame = alocar_frame(); // procura e faz a reserva de um frame vazio e devolve um valor
+			if (frame == -1)
 			{
-				const uint32_t indice = pagina * Config::page_size + offset;		 // posição no programa
-				const uint16_t endereco_fisico = frame * Config::page_size + offset; // posição na memória
+				terminal_println(cpu, Terminal::Kernel, "Sem memoria fisica livre");
+				return;
+			}
+			mapear_pagina(processo.page_table, pagina, frame);
+
+			for (uint16_t i = 0; i < Config::page_size; i++) // cria um loop de cópias
+			{
+				const uint32_t indice = pagina * Config::page_size + i;
+				const uint16_t endereco_fisico = frame * Config::page_size + i;
 				const uint16_t valor = (indice < programa.size()) ? programa[indice] : 0;
-				cpu->pmem_write(endereco_fisico, valor); // copia a página pro frame
+
+				cpu->pmem_write(endereco_fisico, valor);
 			}
 		}
-		// liga a memória virtual em paginação e aponta pra tabela de processos
-		cpu->set_vmem_mode(VmemMode::Paging);	   // inicia a tradução por páginação
-		cpu->set_page_table(&processo.page_table); // mostra a CPU qual a tabela que vai usar
 
-		// aponta pro endereço 1
+		cpu->set_vmem_mode(VmemMode::Paging);
+		cpu->set_page_table(&processo.page_table);
 		cpu->set_pc(1);
 		processo.pc = 1;
 		processo.registradores = {};
 	}
 
-	// traduz o endereço virtual para o físico, usando a paginação
-	static uint16_t traduzir(uint16_t vaddr)
-	{
-		const uint16_t pagina = vaddr >> Config::page_size_bits;				  // número das páginas
-		const uint16_t offset = vaddr & (Config::page_size - 1);				  // posição dentro da página
-		const uint16_t frame = processo.page_table[pagina][PteField::PhyFrameID]; // leitura do frame da tabela
-
-		return frame * Config::page_size + offset; // cria o endereço físico
-	}
 	//----------------------------parte onde inicia a "máquina"
 	void boot(Arch::Cpu *cpu_ptr)
 	{
@@ -118,6 +99,7 @@ namespace OS
 		terminal_println(cpu, Terminal::App, "Apps output here");		// de cada
 		terminal_println(cpu, Terminal::Kernel, "Kernel output here");	// terminal
 		carrega_programa("idle.bin");
+		restaurar_contexto();
 	}
 
 	// ----leitura do comando do usuário e interpretação
@@ -225,6 +207,7 @@ namespace OS
 			terminal_println(cpu, Terminal::Kernel, "Excecao da CPU no endereco ", excecao.vaddr, " - processo finalizado"); // o endereço que gerou o problema
 			processo.estado = Estado::Morto;																				 // marca o processo como morto
 			carrega_programa("idle.bin");																					 // mata o processo e volta pro idle-bin
+
 			break;
 		}
 		}
@@ -245,23 +228,31 @@ namespace OS
 
 		case 1: // Esse imprime uma String
 		{
-			uint16_t vaddr = cpu->get_gpr(1);			   // endereço virtual
-			uint16_t ch = cpu->pmem_read(traduzir(vaddr)); // traduz e lê
-			while (ch != 0)
+			uint16_t vaddr = cpu->get_gpr(1); // endereço virtual
+
+			while (true)
 			{
+				const int paddr = traduzir(processo.page_table, vaddr); // traduz do virtual para o físico e verifica onde está
+
+				if (paddr == -1)
+					break;								   // se existe, para
+				const uint16_t ch = cpu->pmem_read(paddr); // procura qual caracter
+
+				if (ch == 0)
+					break;
+
 				terminal_print(cpu, Terminal::App, static_cast<char>(ch));
-				vaddr++;
-				ch = cpu->pmem_read(traduzir(vaddr));
+				vaddr++; // próximo passo
 			}
 			break;
 		}
-		case 2: // nova linha
+		case 2: // para uma nova linha
 			terminal_print(cpu, Terminal::App, '\n');
 			break;
 
-		case 3: // imprime um número inteiro
+		case 3: // faz a impressão de um int
 			terminal_print(cpu, Terminal::App, cpu->get_gpr(1));
+			break;
 		}
 	}
-
 } // end namespace OS
