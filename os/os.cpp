@@ -34,7 +34,6 @@ namespace OS
 		uint16_t pc = 1;
 		std::array<uint16_t, 8> registradores = {};
 
-		// ainda vai ser feita a páginação
 		PageTable page_table;
 	};
 	static Process processo;
@@ -48,6 +47,9 @@ namespace OS
 	}
 	void restaurar_contexto()
 	{
+		cpu->set_vmem_mode(VmemMode::Paging);
+		cpu->set_page_table(&processo.page_table);
+
 		cpu->set_pc(processo.pc);
 		for (int i = 0; i < 8; i++)
 			cpu->set_gpr(i, processo.registradores[i]);
@@ -121,9 +123,9 @@ namespace OS
 			terminal_println(cpu, Terminal::App, "help - mostra os comandos");
 			terminal_println(cpu, Terminal::App, "ola - mostra uma mensagem");
 			terminal_println(cpu, Terminal::App, "clear - limpa a tela");
-			terminal_println(cpu, Terminal::App, "run - carrega o programa simple-1.bin");
+			terminal_println(cpu, Terminal::App, "run - carrega o programa print.bin");
 			terminal_println(cpu, Terminal::App, "exit - Fecha tudo");
-			terminal_println(cpu, Terminal::App, "kill - mata o progresso");
+			terminal_println(cpu, Terminal::App, "kill - mata o processo");
 		}
 		else if (comando == "ola")
 		{
@@ -203,10 +205,10 @@ namespace OS
 		}
 		case InterruptCode::CpuException:
 		{
-			const auto excecao = cpu->get_ref_cpu_exception();																 // pega os detalhes da exceção
-			terminal_println(cpu, Terminal::Kernel, "Excecao da CPU no endereco ", excecao.vaddr, " - processo finalizado"); // o endereço que gerou o problema
-			processo.estado = Estado::Morto;																				 // marca o processo como morto
-			carrega_programa("idle.bin");																					 // mata o processo e volta pro idle-bin
+			const auto excecao = cpu->get_ref_cpu_exception();																				   // pega os detalhes da exceção
+			terminal_println(cpu, Terminal::Kernel, "Excecao ", excecao.type, " no endereco virtual ", excecao.vaddr, " processo finalizado"); // o endereço que gerou o problema
+			processo.estado = Estado::Morto;																								   // marca o processo como morto
+			carrega_programa("idle.bin");																									   // mata o processo e volta pro idle-bin
 
 			break;
 		}
