@@ -32,7 +32,7 @@ namespace OS
 		std::string nome;
 		Estado estado = Estado::Pronto;
 		uint16_t pc = 1;
-		std::array<uint16_t, 8> registradores = {};
+		std::array<uint16_t, Config::nregs> registradores = {};
 
 		PageTable page_table;
 	};
@@ -42,7 +42,7 @@ namespace OS
 	void salvar_contexto()
 	{
 		processo.pc = cpu->get_pc();
-		for (int i = 0; i < 8; i++)
+		for (uint32_t i = 0; i < Config::nregs; i++)
 			processo.registradores[i] = cpu->get_gpr(i);
 	}
 	void restaurar_contexto()
@@ -51,7 +51,7 @@ namespace OS
 		cpu->set_page_table(&processo.page_table);
 
 		cpu->set_pc(processo.pc);
-		for (int i = 0; i < 8; i++)
+		for (uint32_t i = 0; i < Config::nregs; i++)
 			cpu->set_gpr(i, processo.registradores[i]);
 	}
 
@@ -123,9 +123,9 @@ namespace OS
 			terminal_println(cpu, Terminal::App, "help - mostra os comandos");
 			terminal_println(cpu, Terminal::App, "ola - mostra uma mensagem");
 			terminal_println(cpu, Terminal::App, "clear - limpa a tela");
-			terminal_println(cpu, Terminal::App, "run - carrega o programa print.bin");
-			terminal_println(cpu, Terminal::App, "exit - Fecha tudo");
+			terminal_println(cpu, Terminal::App, "run <nome> - carrega e executa <nome>.bin");
 			terminal_println(cpu, Terminal::App, "kill - mata o processo");
+			terminal_println(cpu, Terminal::App, "exit - Fecha o simulador");
 		}
 		else if (comando == "ola")
 		{
