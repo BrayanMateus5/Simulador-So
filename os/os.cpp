@@ -249,12 +249,20 @@ namespace OS
 			break;
 		}
 		case 2: // para uma nova linha
+		{
 			terminal_print(cpu, Terminal::App, '\n');
 			break;
-
+		}
 		case 3: // faz a impressão de um int
+		{
 			terminal_print(cpu, Terminal::App, cpu->get_gpr(1));
 			break;
+		}
+		case 7:{  //retorna o tempo em segundos desde que o simulador foi iniciado
+			const uint16_t tempo = cpu->read_io(IO_Port::TimerGetTimeSeconds);
+			cpu->set_gpr(1, tempo);
+			break;
+		}
 		}
 	}
 } // end namespace OS
