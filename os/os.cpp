@@ -124,6 +124,7 @@ namespace OS
 			terminal_println(cpu, Terminal::App, "ola - mostra uma mensagem");
 			terminal_println(cpu, Terminal::App, "clear - limpa a tela");
 			terminal_println(cpu, Terminal::App, "run <nome> - carrega e executa <nome>.bin");
+			terminal_println(cpu, Terminal::App, "timer <ciclos> - configura o intervalo do relogio");
 			terminal_println(cpu, Terminal::App, "kill - mata o processo");
 			terminal_println(cpu, Terminal::App, "exit - Fecha o simulador");
 		}
@@ -166,13 +167,36 @@ namespace OS
 				terminal_println(cpu, Terminal::Kernel, "Nenhum processo em execucao ");
 			}
 		}
+		else if (comando == "timer")
+		{
+			if (argumento == "")
+				terminal_println(cpu, Terminal::App, "Uso: timer <ciclos>");
+			else
+			{
+				try
+				{
+					int ciclos = std::stoi(argumento);
+					if (ciclos < 1 || ciclos > 65535)
+						terminal_println(cpu, Terminal::App, "Valor esta fora da faixa (1 a 65535)");
+					else
+					{
+						cpu->write_io( IO_Port::TimerInterruptCycles, static_cast<uint16_t>(ciclos) );
+						terminal_println(cpu, Terminal::App, "Timer configurado para ", ciclos, " ciclos.");
+					}
+				}
+				catch (...)
+				{
+					terminal_println(cpu, Terminal::App, "Numero invalido.");
+				}
+			}
+		}
 		else
 		{
 			terminal_println(cpu, Terminal::App, "Unknown command: ", cmd);
 		}
 	}
 
-	//----------------------------------------------Interrupção de código de teclado
+	//----------------------------------------------Tratador de interrupções
 	void interrupt(InterruptCode code)
 	{
 		salvar_contexto(); // salva o processo atual
@@ -212,6 +236,12 @@ namespace OS
 
 			break;
 		}
+		// por enquanto, apenas pra ver o relógio
+		case InterruptCode::Timer:
+
+		//parte do escalonador
+			break;
+
 		}
 		restaurar_contexto();
 	}
