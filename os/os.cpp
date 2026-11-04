@@ -15,10 +15,13 @@
 
 namespace OS
 {
+
 	static Arch::Cpu *cpu = nullptr;
 	static std::string line_buffer;
-
+	
 	//----------------Estrutura de processos
+
+	//cada processo tem uma ficha com tudo que precisa para rodar, como estado, memórias, registradores e pc.
 	enum class Estado
 	{
 		Executando,
@@ -29,7 +32,7 @@ namespace OS
 
 	struct Process
 	{
-		// verifica qual programa que vai estar rodando
+//nome do .bin, estado do processo, pc, pid, registradores e tabela de páginas.
 		std::string nome;
 		Estado estado = Estado::Morto;
 		uint16_t pc = 1;
@@ -38,12 +41,14 @@ namespace OS
 
 		PageTable page_table;
 	};
+	//Tabela de processos, onde existe um limite de processos que podem ser executados, e o processo atual que está rodando. O 0 é o processo idle.bin, que é o processo que roda quando não há nenhum outro processo em execução.
 	static constexpr uint16_t max_processos = 8;
 
 	static std::array<Process, max_processos> processos;
 	static uint16_t atual = 0;
 
-	// faz a leitura do estado e guarda
+	// salvar: copia a CPU para a ficha do processo atual
+	// restaurar: copia a ficha do processo atual para a CPU 
 	void salvar_contexto()
 	{
 		processos[atual].pc = cpu->get_pc();
@@ -60,7 +65,7 @@ namespace OS
 			cpu->set_gpr(i, processos[atual].registradores[i]);
 	}
 
-	//------Carregamento do comando do usuário
+	//------Divide o programa em páginas de 16 words, aloca frames para cada página e copia o conteúdo do programa para a memória física.
 	static void carrega_programa(const std::string &nome, const uint16_t indice)
 	{
 		// faz a leitura do bin para um vetor de palavras
@@ -93,6 +98,7 @@ namespace OS
 		processos[indice].pc = 1;
 		processos[indice].registradores = {};
 	}
+	//-----------------Finaliza o processo atual, liberando a memória e voltando para o processo idle.bin
 	static void finaliza_processo(const uint16_t indice)
 	{
 		processos[indice].estado = Estado::Morto;
@@ -101,10 +107,10 @@ namespace OS
 		{
 			atual = 0;
 		}
-		
+		terminal_println(cpu, Terminal::Kernel, "Processo finalizado ", processos[indice].nome);
 	}
 
-	//----------------------------parte onde inicia a "máquina"
+	//----------------------------parte onde inicia o sistema operacional, carrega o idle.bin e imprime as mensagens iniciais
 	void boot(Arch::Cpu *cpu_ptr)
 	{
 		cpu = cpu_ptr; // guarda o ponteiro para utilizar depois
@@ -118,7 +124,7 @@ namespace OS
 		restaurar_contexto();
 	}
 
-	// ----leitura do comando do usuário e interpretação
+	// ----o terminal de comandos, ele recebe o comando digitado, separa o comando do argumento e executa a ação correspondente.
 	static void interpretar_comando(const std::string &cmd)
 	{
 		// faz a separação do comando e argumento
@@ -179,7 +185,6 @@ namespace OS
 		{
 			if (atual != 0)
 			{
-				terminal_println(cpu, Terminal::Kernel, "Programa finalizado");
 				finaliza_processo(atual);
 			}
 			else
@@ -216,7 +221,7 @@ namespace OS
 		}
 	}
 
-	//----------------------------------------------Tratador de interrupções
+	//--------Ele sempre salva o contexto - faz o tratamento e restaura o contexto
 	void interrupt(InterruptCode code)
 	{
 		salvar_contexto(); // salva o processo atual
@@ -255,7 +260,6 @@ namespace OS
 
 			break;
 		}
-		// por enquanto, apenas pra ver o relógio
 		case InterruptCode::Timer:
 
 		//parte do escalonador
@@ -264,7 +268,7 @@ namespace OS
 		}
 		restaurar_contexto();
 	}
-
+		//as chamadas do sistema, o numero vai em r0 e o argumento em r1
 	void syscall()
 	{
 		const uint16_t servico = cpu->get_gpr(0);
@@ -272,7 +276,6 @@ namespace OS
 		switch (servico)
 		{
 		case 0: // pra fechar o processo
-			terminal_println(cpu, Terminal::Kernel, "Processo encerrado");
 			finaliza_processo(atual);
 			restaurar_contexto();
 			break;
@@ -286,8 +289,8 @@ namespace OS
 				const int paddr = traduzir(processos[atual].page_table, vaddr); // traduz do virtual para o físico e verifica onde está
 
 				if (paddr == -1)
-					break;								   // se existe, para
-				const uint16_t ch = cpu->pmem_read(paddr); // procura qual caracter
+					break;							// a pagina não existe, para
+				const uint16_t ch = cpu->pmem_read(paddr); // lê o caracter
 
 				if (ch == 0)
 					break;
