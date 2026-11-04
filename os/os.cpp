@@ -26,42 +26,47 @@ namespace OS
 		Bloqueado,
 		Morto
 	};
+
 	struct Process
 	{
 		// verifica qual programa que vai estar rodando
 		std::string nome;
-		Estado estado = Estado::Pronto;
+		Estado estado = Estado::Morto;
 		uint16_t pc = 1;
+		uint16_t pid;
 		std::array<uint16_t, Config::nregs> registradores = {};
 
 		PageTable page_table;
 	};
-	static Process processo;
+	static constexpr uint16_t max_processos = 8;
+
+	static std::array<Process, max_processos> processos;
+	static uint16_t atual = 0;
 
 	// faz a leitura do estado e guarda
 	void salvar_contexto()
 	{
-		processo.pc = cpu->get_pc();
+		processos[atual].pc = cpu->get_pc();
 		for (uint32_t i = 0; i < Config::nregs; i++)
-			processo.registradores[i] = cpu->get_gpr(i);
+			processos[atual].registradores[i] = cpu->get_gpr(i);
 	}
 	void restaurar_contexto()
 	{
 		cpu->set_vmem_mode(VmemMode::Paging);
-		cpu->set_page_table(&processo.page_table);
+		cpu->set_page_table(&processos[atual].page_table);
 
-		cpu->set_pc(processo.pc);
+		cpu->set_pc(processos[atual].pc);
 		for (uint32_t i = 0; i < Config::nregs; i++)
-			cpu->set_gpr(i, processo.registradores[i]);
+			cpu->set_gpr(i, processos[atual].registradores[i]);
 	}
 
 	//------Carregamento do comando do usuário
-	static void carrega_programa(const std::string &nome)
+	static void carrega_programa(const std::string &nome, const uint16_t indice)
 	{
 		// faz a leitura do bin para um vetor de palavras
 		std::vector<uint16_t> programa = Lib::load_from_disk_to_16bit_buffer(nome);
 
-		liberar_tabela(processo.page_table); // liberação de frames ocupados do processo anterior
+		liberar_tabela(processos[indice].page_table); // liberação de frames ocupados do processo anterior
 
 		const uint16_t num_paginas = (programa.size() + Config::page_size - 1) / Config::page_size; // declaração de num_paginas
 
@@ -73,23 +78,30 @@ namespace OS
 				terminal_println(cpu, Terminal::Kernel, "Sem memoria fisica livre");
 				return;
 			}
-			mapear_pagina(processo.page_table, pagina, frame);
+			mapear_pagina(processos[indice].page_table, pagina, frame);
 
 			for (uint16_t i = 0; i < Config::page_size; i++) // cria um loop de cópias
 			{
-				const uint32_t indice = pagina * Config::page_size + i;
+				const uint32_t posicao = pagina * Config::page_size + i;
 				const uint16_t endereco_fisico = frame * Config::page_size + i;
-				const uint16_t valor = (indice < programa.size()) ? programa[indice] : 0;
+				const uint16_t valor = (posicao < programa.size()) ? programa[posicao] : 0;
 
 				cpu->pmem_write(endereco_fisico, valor);
 			}
 		}
 
-		cpu->set_vmem_mode(VmemMode::Paging);
-		cpu->set_page_table(&processo.page_table);
-		cpu->set_pc(1);
-		processo.pc = 1;
-		processo.registradores = {};
+		processos[indice].pc = 1;
+		processos[indice].registradores = {};
+	}
+	static void finaliza_processo(const uint16_t indice)
+	{
+		processos[indice].estado = Estado::Morto;
+		liberar_tabela(processos[indice].page_table);
+		if (indice == atual)
+		{
+			atual = 0;
+		}
+		
 	}
 
 	//----------------------------parte onde inicia a "máquina"
@@ -100,7 +112,9 @@ namespace OS
 		terminal_println(cpu, Terminal::Command, "Type commands here"); // mensagem
 		terminal_println(cpu, Terminal::App, "Apps output here");		// de cada
 		terminal_println(cpu, Terminal::Kernel, "Kernel output here");	// terminal
-		carrega_programa("idle.bin");
+		carrega_programa("idle.bin", 0); // carrega o idle.bin no processo 0
+		processos[0].estado = Estado::Executando;
+		processos[0].nome = "idle.bin";
 		restaurar_contexto();
 	}
 
@@ -143,11 +157,18 @@ namespace OS
 		{
 			if (argumento == "") // acabou digitando run sem argumento
 				terminal_println(cpu, Terminal::App, "Uso: run <nome_do_programa>");
+		
+			else if (atual != 0 && processos[atual].estado == Estado::Executando)
+			{
+				terminal_println(cpu, Terminal::App, "Um processo ja esta em execucao. Finalize-o antes de iniciar outro.");
+				return;
+			}
 			else
 			{
-				carrega_programa(argumento + ".bin");
-				processo.nome = argumento + ".bin";
-				processo.estado = Estado::Executando;
+				carrega_programa(argumento + ".bin", 1);
+				processos[1].nome = argumento + ".bin";
+				processos[1].estado = Estado::Executando;
+				atual = 1;
 			}
 		}
 		else if (comando == "exit")
@@ -156,11 +177,10 @@ namespace OS
 		}
 		else if (comando == "kill")
 		{
-			if (processo.estado == Estado::Executando)
+			if (atual != 0)
 			{
 				terminal_println(cpu, Terminal::Kernel, "Programa finalizado");
-				processo.estado = Estado::Morto;
-				carrega_programa("idle.bin");
+				finaliza_processo(atual);
 			}
 			else
 			{
@@ -230,9 +250,8 @@ namespace OS
 		case InterruptCode::CpuException:
 		{
 			const auto excecao = cpu->get_ref_cpu_exception();																				   // pega os detalhes da exceção
-			terminal_println(cpu, Terminal::Kernel, "Excecao ", excecao.type, " no endereco virtual ", excecao.vaddr, " processo finalizado"); // o endereço que gerou o problema
-			processo.estado = Estado::Morto;																								   // marca o processo como morto
-			carrega_programa("idle.bin");																									   // mata o processo e volta pro idle-bin
+			terminal_println(cpu, Terminal::Kernel, "Excecao ", excecao.type, " no endereco virtual ", excecao.vaddr, " processo finalizado");
+			finaliza_processo(atual);																									   // mata o processo e volta pro idle-bin
 
 			break;
 		}
@@ -254,8 +273,8 @@ namespace OS
 		{
 		case 0: // pra fechar o processo
 			terminal_println(cpu, Terminal::Kernel, "Processo encerrado");
-			processo.estado = Estado::Morto;
-			carrega_programa("idle.bin");
+			finaliza_processo(atual);
+			restaurar_contexto();
 			break;
 
 		case 1: // Esse imprime uma String
@@ -264,7 +283,7 @@ namespace OS
 
 			while (true)
 			{
-				const int paddr = traduzir(processo.page_table, vaddr); // traduz do virtual para o físico e verifica onde está
+				const int paddr = traduzir(processos[atual].page_table, vaddr); // traduz do virtual para o físico e verifica onde está
 
 				if (paddr == -1)
 					break;								   // se existe, para
